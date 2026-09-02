@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useAuth } from '../features/auth/AuthContext'
 import { deleteChart, getEditorStorageMode, listCharts, saveChart } from '../features/editor/chartRepository'
-import { createEmptyChart, DEFAULT_CELL_SIZE, DEFAULT_PAINT_COLOR, DEFAULT_TECHNIQUE, DEFAULT_TUNISIAN_STITCH, duplicateColumn, duplicateColumnInMap, duplicateRow, duplicateRowInMap, insertBlankColumn, insertBlankColumnInMap, insertBlankRow, insertBlankRowInMap, normalizeGridSizes, PALETTE_COLORS, removeColumnFromMap, removeRowFromMap, resizeCellMap, TECHNIQUE_OPTIONS, TUNISIAN_STITCH_OPTIONS, type CrochetChart, type CrochetTechnique, type TunisianStitch, GRID_COLUMNS, GRID_ROWS, removeColumn, removeRow, resizePaintedCells } from '../features/editor/chartStorage'
+import { createEmptyChart, DEFAULT_CELL_SIZE, DEFAULT_PAINT_COLOR, DEFAULT_TECHNIQUE, DEFAULT_TUNISIAN_STITCH, duplicateColumn, duplicateColumnInMap, duplicateRow, duplicateRowInMap, normalizeGridSizes, resizeCellMap, TECHNIQUE_OPTIONS, TUNISIAN_STITCH_OPTIONS, type CrochetChart, type CrochetTechnique, type TunisianStitch, GRID_COLUMNS, GRID_ROWS, resizePaintedCells } from '../features/editor/chartStorage'
 import { rasterizeShapeToGrid, SHAPE_PRESETS } from '../features/editor/shapePresets'
 import { stitchSymbols } from '../features/editor/stitchSymbols'
 import { buildWrittenInstructions } from '../features/editor/writtenInstructions'
@@ -9,9 +9,12 @@ import { publicAsset } from '../lib/publicAsset'
 
 type BrushMode = 'paint' | 'erase'
 type TunisianTool = TunisianStitch | 'erase'
-type InsertPlacement = 'before' | 'after'
-type GridSelection = { axis: 'row' | 'column'; index: number } | null
 type ResizeTarget = { axis: 'row' | 'column'; index: number; startCoordinate: number; startSize: number } | null
+type GridPosition = { row: number; column: number }
+const STAMP_SIZE = 7
+const ZOOM_STEP = 0.15
+const ZOOM_MIN = 0.4
+const ZOOM_MAX = 3
 
 function formatTimestamp(timestamp: string) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -93,19 +96,57 @@ export function EditorPage() {
   const [loadError, setLoadError] = useState('')
   const [brushMode, setBrushMode] = useState<BrushMode>('paint')
   const [isPointerDown, setIsPointerDown] = useState(false)
-  const [insertPlacement, setInsertPlacement] = useState<InsertPlacement>('after')
-  const [selection, setSelection] = useState<GridSelection>(null)
   const [resizeTarget, setResizeTarget] = useState<ResizeTarget>(null)
   const [showStitchLegend, setShowStitchLegend] = useState(false)
   const [technique, setTechnique] = useState<CrochetTechnique>(DEFAULT_TECHNIQUE)
   const [cellSymbols, setCellSymbols] = useState<Record<number, TunisianStitch>>({})
   const [tunisianTool, setTunisianTool] = useState<TunisianTool>(DEFAULT_TUNISIAN_STITCH)
   const [cellColors, setCellColors] = useState<Record<number, string>>({})
-  const [selectedColor, setSelectedColor] = useState(DEFAULT_PAINT_COLOR)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [showInstructions, setShowInstructions] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null)
+  const [cursorPosition, setCursorPosition] = useState<GridPosition>({ row: 0, column: 0 })
+  const [selectedStampId, setSelectedStampId] = useState<string | null>(null)
+  const [stampMask, setStampMask] = useState<GridPosition[] | null>(null)
+  const [stampPosition, setStampPosition] = useState<GridPosition | null>(null)
+  const [zoom, setZoom] = useState(1)
   const gridShellRef = useRef<HTMLDivElement>(null)
+  const gridFocusRef = useRef<HTMLDivElement>(null)
   const hasAutoFilledRef = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      if (profilePhotoUrl) URL.revokeObjectURL(profilePhotoUrl)
+    }
+  }, [profilePhotoUrl])
+
+  // Intercepta o zoom nativo do navegador para escalar somente o grafico.
+  useEffect(() => {
+    const handleZoomShortcut = (event: globalThis.KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault()
+        setZoom((current) => Math.min(ZOOM_MAX, Math.round((current + ZOOM_STEP) * 100) / 100))
+        return
+      }
+
+      if (event.key === '-' || event.key === '_') {
+        event.preventDefault()
+        setZoom((current) => Math.max(ZOOM_MIN, Math.round((current - ZOOM_STEP) * 100) / 100))
+        return
+      }
+
+      if (event.key === '0') {
+        event.preventDefault()
+        setZoom(1)
+      }
+    }
+
+    window.addEventListener('keydown', handleZoomShortcut)
+    return () => window.removeEventListener('keydown', handleZoomShortcut)
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -172,7 +213,7 @@ export function EditorPage() {
         return nextColors
       }
 
-      return { ...currentColors, [cellIndex]: selectedColor }
+      return { ...currentColors, [cellIndex]: DEFAULT_PAINT_COLOR }
     })
   }
 
@@ -269,7 +310,10 @@ export function EditorPage() {
     setCellSymbols({})
     setCellColors({})
     setSelectedShapeId(null)
-    setSelection(null)
+    setCursorPosition({ row: 0, column: 0 })
+    setSelectedStampId(null)
+    setStampMask(null)
+    setStampPosition(null)
     setBrushMode('paint')
     setNotice('Novo grafico pronto para edicao.')
   }
@@ -286,7 +330,10 @@ export function EditorPage() {
     setCellSymbols(chart.cellSymbols ?? {})
     setCellColors(chart.cellColors ?? {})
     setSelectedShapeId(null)
-    setSelection(null)
+    setCursorPosition({ row: 0, column: 0 })
+    setSelectedStampId(null)
+    setStampMask(null)
+    setStampPosition(null)
     setNotice(`Editando ${chart.name}.`)
   }
 
@@ -343,17 +390,17 @@ export function EditorPage() {
       return
     }
 
-    const nextGrid = duplicateRow(paintedCells, rows, columns, selectedRow, insertPlacement)
+    const nextGrid = duplicateRow(paintedCells, rows, columns, selectedRow, 'after')
     setRows(nextGrid.rows)
     setPaintedCells(nextGrid.paintedCells)
-    setCellSymbols((currentSymbols) => duplicateRowInMap(currentSymbols, columns, selectedRow, insertPlacement))
-    setCellColors((currentColors) => duplicateRowInMap(currentColors, columns, selectedRow, insertPlacement))
+    setCellSymbols((currentSymbols) => duplicateRowInMap(currentSymbols, columns, selectedRow, 'after'))
+    setCellColors((currentColors) => duplicateRowInMap(currentColors, columns, selectedRow, 'after'))
     setRowHeights((currentSizes) => {
       const nextSizes = [...currentSizes]
-      nextSizes.splice(insertPlacement === 'before' ? selectedRow : selectedRow + 1, 0, currentSizes[selectedRow] ?? DEFAULT_CELL_SIZE)
+      nextSizes.splice(selectedRow + 1, 0, currentSizes[selectedRow] ?? DEFAULT_CELL_SIZE)
       return nextSizes
     })
-    setNotice(`Linha ${selectedRow + 1} duplicada ${insertPlacement === 'before' ? 'acima' : 'abaixo'}.`)
+    setNotice(`Linha ${selectedRow + 1} duplicada abaixo.`)
   }
 
   const duplicateSelectedColumn = (selectedColumn: number) => {
@@ -362,101 +409,17 @@ export function EditorPage() {
       return
     }
 
-    const nextGrid = duplicateColumn(paintedCells, rows, columns, selectedColumn, insertPlacement)
+    const nextGrid = duplicateColumn(paintedCells, rows, columns, selectedColumn, 'after')
     setColumns(nextGrid.columns)
     setPaintedCells(nextGrid.paintedCells)
-    setCellSymbols((currentSymbols) => duplicateColumnInMap(currentSymbols, columns, selectedColumn, insertPlacement))
-    setCellColors((currentColors) => duplicateColumnInMap(currentColors, columns, selectedColumn, insertPlacement))
+    setCellSymbols((currentSymbols) => duplicateColumnInMap(currentSymbols, columns, selectedColumn, 'after'))
+    setCellColors((currentColors) => duplicateColumnInMap(currentColors, columns, selectedColumn, 'after'))
     setColumnWidths((currentSizes) => {
       const nextSizes = [...currentSizes]
-      nextSizes.splice(insertPlacement === 'before' ? selectedColumn : selectedColumn + 1, 0, currentSizes[selectedColumn] ?? DEFAULT_CELL_SIZE)
+      nextSizes.splice(selectedColumn + 1, 0, currentSizes[selectedColumn] ?? DEFAULT_CELL_SIZE)
       return nextSizes
     })
-    setNotice(`Coluna ${selectedColumn + 1} duplicada ${insertPlacement === 'before' ? 'a esquerda' : 'a direita'}.`)
-  }
-
-  const insertSelectedAxis = () => {
-    if (!selection) {
-      setNotice('Selecione o numero de uma linha ou coluna primeiro.')
-      return
-    }
-
-    if (selection.axis === 'row') {
-      if (rows >= 80) {
-        setNotice('O limite de 80 linhas foi atingido.')
-        return
-      }
-
-      const nextGrid = insertBlankRow(paintedCells, columns, selection.index, insertPlacement)
-      setRows(rows + 1)
-      setPaintedCells(nextGrid.paintedCells)
-      setCellSymbols((currentSymbols) => insertBlankRowInMap(currentSymbols, columns, selection.index, insertPlacement))
-      setCellColors((currentColors) => insertBlankRowInMap(currentColors, columns, selection.index, insertPlacement))
-      setRowHeights((currentSizes) => {
-        const nextSizes = [...currentSizes]
-        nextSizes.splice(insertPlacement === 'before' ? selection.index : selection.index + 1, 0, DEFAULT_CELL_SIZE)
-        return nextSizes
-      })
-      setSelection({ axis: 'row', index: insertPlacement === 'before' ? selection.index : selection.index + 1 })
-      setNotice(`Linha vazia inserida ${insertPlacement === 'before' ? 'acima' : 'abaixo'} da linha ${selection.index + 1}.`)
-      return
-    }
-
-    if (columns >= 80) {
-      setNotice('O limite de 80 colunas foi atingido.')
-      return
-    }
-
-    const nextGrid = insertBlankColumn(paintedCells, columns, selection.index, insertPlacement)
-    setColumns(columns + 1)
-    setPaintedCells(nextGrid.paintedCells)
-    setCellSymbols((currentSymbols) => insertBlankColumnInMap(currentSymbols, columns, selection.index, insertPlacement))
-    setCellColors((currentColors) => insertBlankColumnInMap(currentColors, columns, selection.index, insertPlacement))
-    setColumnWidths((currentSizes) => {
-      const nextSizes = [...currentSizes]
-      nextSizes.splice(insertPlacement === 'before' ? selection.index : selection.index + 1, 0, DEFAULT_CELL_SIZE)
-      return nextSizes
-    })
-    setSelection({ axis: 'column', index: insertPlacement === 'before' ? selection.index : selection.index + 1 })
-    setNotice(`Coluna vazia inserida ${insertPlacement === 'before' ? 'a esquerda' : 'a direita'} da coluna ${selection.index + 1}.`)
-  }
-
-  const removeSelectedAxis = () => {
-    if (!selection) {
-      setNotice('Selecione o numero de uma linha ou coluna primeiro.')
-      return
-    }
-
-    if (selection.axis === 'row') {
-      if (rows === 1) {
-        setNotice('A grade precisa ter pelo menos uma linha.')
-        return
-      }
-
-      const nextGrid = removeRow(paintedCells, rows, columns, selection.index)
-      setRows(nextGrid.rows)
-      setPaintedCells(nextGrid.paintedCells)
-      setCellSymbols((currentSymbols) => removeRowFromMap(currentSymbols, columns, selection.index))
-      setCellColors((currentColors) => removeRowFromMap(currentColors, columns, selection.index))
-      setRowHeights((currentSizes) => currentSizes.filter((_, index) => index !== selection.index))
-      setSelection({ axis: 'row', index: Math.min(selection.index, nextGrid.rows - 1) })
-      setNotice(`Linha ${selection.index + 1} removida.`)
-      return
-    }
-
-    if (columns === 1) {
-      setNotice('A grade precisa ter pelo menos uma coluna.')
-      return
-    }
-
-    const nextGrid = removeColumn(paintedCells, rows, columns, selection.index)
-    setColumns(nextGrid.columns)
-    setPaintedCells(nextGrid.paintedCells)
-    setCellSymbols((currentSymbols) => removeColumnFromMap(currentSymbols, columns, selection.index))
-    setCellColors((currentColors) => removeColumnFromMap(currentColors, columns, selection.index))
-    setColumnWidths((currentSizes) => currentSizes.filter((_, index) => index !== selection.index))
-    setSelection({ axis: 'column', index: Math.min(selection.index, nextGrid.columns - 1) })
-    setNotice(`Coluna ${selection.index + 1} removida.`)
+    setNotice(`Coluna ${selectedColumn + 1} duplicada a direita.`)
   }
 
   const removeCurrentChart = async () => {
@@ -541,14 +504,108 @@ export function EditorPage() {
     updateDimensions(rows, nextColumns)
   }
 
-  const usedColorCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const cellIndex of paintedCells) {
-      const color = cellColors[cellIndex] ?? DEFAULT_PAINT_COLOR
-      counts.set(color, (counts.get(color) ?? 0) + 1)
+  const handleProfilePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (profilePhotoUrl) URL.revokeObjectURL(profilePhotoUrl)
+    setProfilePhotoUrl(URL.createObjectURL(file))
+  }
+
+  const cancelStamp = () => {
+    setSelectedStampId(null)
+    setStampMask(null)
+    setStampPosition(null)
+  }
+
+  const handleSelectStamp = async (presetId: string) => {
+    if (presetId === (selectedStampId ?? 'none')) {
+      cancelStamp()
+      return
     }
-    return [...counts.entries()].sort((left, right) => right[1] - left[1])
-  }, [cellColors, paintedCells])
+
+    const preset = SHAPE_PRESETS.find((option) => option.id === presetId)
+    if (!preset) return
+
+    try {
+      const paintedOffsets = await rasterizeShapeToGrid(preset.src, STAMP_SIZE, STAMP_SIZE)
+      const mask = paintedOffsets.map((index) => ({ row: Math.floor(index / STAMP_SIZE), column: index % STAMP_SIZE }))
+      setSelectedStampId(presetId)
+      setStampMask(mask)
+      setStampPosition({
+        row: Math.max(0, Math.min(rows - 1, Math.floor(rows / 2) - Math.floor(STAMP_SIZE / 2))),
+        column: Math.max(0, Math.min(columns - 1, Math.floor(columns / 2) - Math.floor(STAMP_SIZE / 2))),
+      })
+      setNotice(`Carimbo "${preset.label}" selecionado. Use as setas para mover e Enter para aplicar na grade.`)
+      gridFocusRef.current?.focus()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nao foi possivel carregar o carimbo.')
+    }
+  }
+
+  const stampCells = useMemo(() => {
+    const cells = new Set<number>()
+    if (!selectedStampId || !stampMask || !stampPosition) return cells
+
+    for (const offset of stampMask) {
+      const cellRow = stampPosition.row + offset.row
+      const cellColumn = stampPosition.column + offset.column
+      if (cellRow >= 0 && cellRow < rows && cellColumn >= 0 && cellColumn < columns) cells.add(cellRow * columns + cellColumn)
+    }
+
+    return cells
+  }, [columns, rows, selectedStampId, stampMask, stampPosition])
+
+  const moveCursorOrStamp = (deltaRow: number, deltaColumn: number) => {
+    if (selectedStampId) {
+      setStampPosition((current) => {
+        const base = current ?? { row: 0, column: 0 }
+        return {
+          row: Math.max(0, Math.min(rows - 1, base.row + deltaRow)),
+          column: Math.max(0, Math.min(columns - 1, base.column + deltaColumn)),
+        }
+      })
+      return
+    }
+
+    setCursorPosition((current) => ({
+      row: Math.max(0, Math.min(rows - 1, current.row + deltaRow)),
+      column: Math.max(0, Math.min(columns - 1, current.column + deltaColumn)),
+    }))
+  }
+
+  const confirmSelection = () => {
+    if (selectedStampId && stampCells.size > 0) {
+      setPaintedCells((currentCells) => [...new Set([...currentCells, ...stampCells])].sort((left, right) => left - right))
+      setCellColors((currentColors) => {
+        const nextColors = { ...currentColors }
+        stampCells.forEach((cellIndex) => { nextColors[cellIndex] = DEFAULT_PAINT_COLOR })
+        return nextColors
+      })
+      setNotice('Carimbo aplicado na grade.')
+      return
+    }
+
+    const cellIndex = cursorPosition.row * columns + cursorPosition.column
+    if (technique === 'tunisian') applyTunisianStitchToCell(cellIndex)
+    else applyBrushToCell(cellIndex)
+  }
+
+  const handleGridKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const keyActions: Record<string, () => void> = {
+      ArrowUp: () => moveCursorOrStamp(-1, 0),
+      ArrowDown: () => moveCursorOrStamp(1, 0),
+      ArrowLeft: () => moveCursorOrStamp(0, -1),
+      ArrowRight: () => moveCursorOrStamp(0, 1),
+      Enter: confirmSelection,
+      Escape: cancelStamp,
+    }
+
+    const action = keyActions[event.key]
+    if (!action) return
+    event.preventDefault()
+    action()
+  }
 
   const writtenInstructions = useMemo(
     () => buildWrittenInstructions(rows, columns, paintedCells, cellColors),
@@ -562,7 +619,7 @@ export function EditorPage() {
       onPointerMove={(event) => {
         if (!resizeTarget) return
         const coordinate = resizeTarget.axis === 'column' ? event.clientX : event.clientY
-        const nextSize = Math.max(18, Math.min(96, resizeTarget.startSize + coordinate - resizeTarget.startCoordinate))
+        const nextSize = Math.max(18, Math.min(96, resizeTarget.startSize + (coordinate - resizeTarget.startCoordinate) / zoom))
         if (resizeTarget.axis === 'column') setColumnWidths((currentSizes) => currentSizes.map((size, index) => index === resizeTarget.index ? nextSize : size))
         else setRowHeights((currentSizes) => currentSizes.map((size, index) => index === resizeTarget.index ? nextSize : size))
       }}
@@ -571,7 +628,16 @@ export function EditorPage() {
     >
       <aside className="editor-sidebar">
         <div className="editor-sidebar__header">
-          <img className="editor-sidebar__profile" src={publicAsset('assets/fotoAline.jfif')} alt="Aline, criadora do projeto" />
+          {user && (
+            <label className="editor-sidebar__profile-upload" title="Enviar foto de perfil">
+              {profilePhotoUrl ? (
+                <img className="editor-sidebar__profile" src={profilePhotoUrl} alt="Sua foto de perfil" />
+              ) : (
+                <span className="editor-sidebar__profile editor-sidebar__profile--placeholder" aria-hidden="true">+</span>
+              )}
+              <input type="file" accept="image/*" className="sr-only" onChange={handleProfilePhotoChange} />
+            </label>
+          )}
           <div>
             <p className="eyebrow">area da criadora</p>
             <h1 id="editor-title">Seus graficos</h1>
@@ -579,36 +645,116 @@ export function EditorPage() {
         </div>
         <p className="editor-sidebar__copy">{getEditorStorageMode() === 'supabase' ? 'Cada usuario salva aqui o proprio historico no banco do Supabase.' : 'Cada usuario salva aqui o proprio historico. Nesta primeira fase, tudo fica guardado localmente no navegador.'}</p>
         <button className="button button--primary editor-sidebar__action" type="button" onClick={startNewChart}>Novo grafico</button>
-        {loadError && <p className="editor-history__empty" role="alert">{loadError}</p>}
-        <div className="editor-history" aria-label="Historico de graficos salvos">
-          {savedCharts.length === 0 ? (
-            <p className="editor-history__empty">Ainda nao ha graficos salvos. Monte o primeiro desenho e clique em salvar.</p>
-          ) : (
-            savedCharts.map((chart) => (
-              <button
-                key={chart.id}
-                className={chart.id === activeChartId ? 'history-card history-card--active' : 'history-card'}
-                type="button"
-                onClick={() => openSavedChart(chart)}
-              >
-                <div className="history-card__preview" aria-hidden="true">
-                  {Array.from({ length: 64 }, (_, previewIndex) => {
-                    const sourceRow = Math.min(chart.rows - 1, Math.floor(previewIndex / 8) * Math.ceil(chart.rows / 8))
-                    const sourceColumn = Math.min(chart.columns - 1, (previewIndex % 8) * Math.ceil(chart.columns / 8))
-                    const sourceIndex = sourceRow * chart.columns + sourceColumn
-                    const filled = chart.paintedCells.includes(sourceIndex)
-                    return <span key={previewIndex} className={filled ? 'history-card__pixel history-card__pixel--filled' : 'history-card__pixel'} />
-                  })}
-                </div>
-                <div className="history-card__meta">
-                  <strong>{chart.name}</strong>
-                  <span>{chart.paintedCells.length} pontos preenchidos</span>
-                  <span>Atualizado em {formatTimestamp(chart.updatedAt)}</span>
-                </div>
-              </button>
-            ))
+
+        <div className="editor-sidebar__collapsible">
+          <button className="editor-sidebar__collapsible-toggle" type="button" onClick={() => setShowHistory((current) => !current)} aria-expanded={showHistory}>
+            Historico {showHistory ? '\u25b2' : '\u25bc'}
+          </button>
+          {showHistory && (
+            <div className="editor-history" aria-label="Historico de graficos salvos">
+              {loadError && <p className="editor-history__empty" role="alert">{loadError}</p>}
+              {savedCharts.length === 0 ? (
+                <p className="editor-history__empty">Ainda nao ha graficos salvos. Monte o primeiro desenho e clique em salvar.</p>
+              ) : (
+                savedCharts.map((chart) => (
+                  <button
+                    key={chart.id}
+                    className={chart.id === activeChartId ? 'history-card history-card--active' : 'history-card'}
+                    type="button"
+                    onClick={() => openSavedChart(chart)}
+                  >
+                    <div className="history-card__preview" aria-hidden="true">
+                      {Array.from({ length: 64 }, (_, previewIndex) => {
+                        const sourceRow = Math.min(chart.rows - 1, Math.floor(previewIndex / 8) * Math.ceil(chart.rows / 8))
+                        const sourceColumn = Math.min(chart.columns - 1, (previewIndex % 8) * Math.ceil(chart.columns / 8))
+                        const sourceIndex = sourceRow * chart.columns + sourceColumn
+                        const filled = chart.paintedCells.includes(sourceIndex)
+                        return <span key={previewIndex} className={filled ? 'history-card__pixel history-card__pixel--filled' : 'history-card__pixel'} />
+                      })}
+                    </div>
+                    <div className="history-card__meta">
+                      <strong>{chart.name}</strong>
+                      <span>{chart.paintedCells.length} pontos preenchidos</span>
+                      <span>Atualizado em {formatTimestamp(chart.updatedAt)}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
           )}
         </div>
+
+        {activeTechniqueOption.gridReady && (
+          <div className="editor-sidebar__tools">
+            <div className="editor-toolbar__group" aria-label="Ferramentas de desenho">
+              <span className="editor-toolbar__group-label">Ferramentas</span>
+              <div className="editor-toolbar__group-controls">
+                {technique === 'tunisian' ? (
+                  <>
+                    {TUNISIAN_STITCH_OPTIONS.map((option) => (
+                      <button key={option.value} className={tunisianTool === option.value ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setTunisianTool(option.value)}>{option.label}</button>
+                    ))}
+                    <button className={tunisianTool === 'erase' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setTunisianTool('erase')}>Apagar</button>
+                  </>
+                ) : (
+                  <>
+                    <button className={brushMode === 'paint' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setBrushMode('paint')}>Pintar</button>
+                    <button className={brushMode === 'erase' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setBrushMode('erase')}>Apagar</button>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="editor-toolbar__group" aria-label="Tamanho da grade">
+              <span className="editor-toolbar__group-label">Grade</span>
+              <div className="editor-toolbar__group-controls editor-toolbar__group-controls--dimensions">
+                <label>Linhas <input type="number" min="1" max="80" value={rows} onChange={(event) => updateDimensions(Number(event.target.value), columns)} /></label>
+                <label>{selectedShapeId ? 'Largura do padrao' : 'Colunas'} <input type="number" min="1" max="80" value={columns} onChange={(event) => handleColumnsFieldChange(Number(event.target.value))} /></label>
+                <button className="tool-button" type="button" onClick={makeGridSquare}>Quadrado</button>
+              </div>
+            </div>
+            <div className="editor-toolbar__group" aria-label="Formato pronto">
+              <span className="editor-toolbar__group-label">Forma</span>
+              <div className="editor-toolbar__group-controls">
+                <select
+                  className="editor-toolbar__technique"
+                  value={selectedShapeId ?? 'none'}
+                  onChange={(event) => handleShapeChange(event.target.value)}
+                >
+                  <option value="none">Nenhum (desenho livre)</option>
+                  {SHAPE_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="editor-toolbar__group" aria-label="Carimbos">
+              <span className="editor-toolbar__group-label">Carimbos</span>
+              <div className="stamp-picker">
+                {SHAPE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={selectedStampId === preset.id ? 'stamp-button stamp-button--active' : 'stamp-button'}
+                    onClick={() => void handleSelectStamp(preset.id)}
+                    title={preset.label}
+                  >
+                    <img src={publicAsset(preset.src)} alt={preset.label} width={28} height={28} />
+                  </button>
+                ))}
+              </div>
+              {selectedStampId && <p className="editor-toolbar__hint-small">Setas movem o carimbo. Enter aplica. Esc cancela.</p>}
+            </div>
+            <div className="editor-toolbar__group" aria-label="Acoes extras">
+              <span className="editor-toolbar__group-label">Extras</span>
+              <div className="editor-toolbar__group-controls">
+                <button className="tool-button" type="button" onClick={() => { setPaintedCells([]); setCellColors({}); setNotice('Grade limpa. Salve para atualizar o historico.'); }}>Limpar</button>
+                <button className="tool-button" type="button" onClick={exportCurrentChart}>Exportar PNG</button>
+                <button className={showStitchLegend ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowStitchLegend((current) => !current)}>Legenda de pontos</button>
+                <button className={showInstructions ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowInstructions((current) => !current)}>Instrucoes escritas</button>
+              </div>
+            </div>
+          </div>
+        )}
       </aside>
       <div className="editor-workspace">
         <div className="editor-toolbar">
@@ -635,92 +781,6 @@ export function EditorPage() {
               <button className="button button--primary" type="button" onClick={() => void saveCurrentChart()} disabled={isSaving}>{isSaving ? 'Salvando...' : 'Salvar'}</button>
             </div>
           </div>
-
-          {activeTechniqueOption.gridReady && (
-            <>
-              <div className="editor-toolbar__row">
-                <div className="editor-toolbar__group" aria-label="Ferramentas de desenho">
-                  <span className="editor-toolbar__group-label">Ferramentas</span>
-                  <div className="editor-toolbar__group-controls">
-                    {technique === 'tunisian' ? (
-                      <>
-                        {TUNISIAN_STITCH_OPTIONS.map((option) => (
-                          <button key={option.value} className={tunisianTool === option.value ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setTunisianTool(option.value)}>{option.label}</button>
-                        ))}
-                        <button className={tunisianTool === 'erase' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setTunisianTool('erase')}>Apagar</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className={brushMode === 'paint' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setBrushMode('paint')}>Pintar</button>
-                        <button className={brushMode === 'erase' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setBrushMode('erase')}>Apagar</button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="editor-toolbar__group" aria-label="Tamanho da grade">
-                  <span className="editor-toolbar__group-label">Grade</span>
-                  <div className="editor-toolbar__group-controls editor-toolbar__group-controls--dimensions">
-                    <label>Linhas <input type="number" min="1" max="80" value={rows} onChange={(event) => updateDimensions(Number(event.target.value), columns)} /></label>
-                    <label>{selectedShapeId ? 'Largura do padrao' : 'Colunas'} <input type="number" min="1" max="80" value={columns} onChange={(event) => handleColumnsFieldChange(Number(event.target.value))} /></label>
-                    <button className="tool-button" type="button" onClick={makeGridSquare}>Quadrado</button>
-                  </div>
-                </div>
-                <div className="editor-toolbar__group" aria-label="Estrutura da grade">
-                  <span className="editor-toolbar__group-label">Estrutura</span>
-                  <div className="editor-toolbar__group-controls">
-                    <button className={insertPlacement === 'before' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setInsertPlacement('before')}>Antes</button>
-                    <button className={insertPlacement === 'after' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setInsertPlacement('after')}>Depois</button>
-                    <button className="tool-button" type="button" onClick={insertSelectedAxis}>Inserir</button>
-                    <button className="tool-button" type="button" onClick={removeSelectedAxis}>Remover</button>
-                  </div>
-                </div>
-              </div>
-              <div className="editor-toolbar__row">
-                {technique !== 'tunisian' && (
-                  <div className="editor-toolbar__group" aria-label="Cores da paleta">
-                    <span className="editor-toolbar__group-label">Cores</span>
-                    <div className="color-palette">
-                      {PALETTE_COLORS.map((color) => (
-                        <button
-                          key={color.value}
-                          type="button"
-                          className={selectedColor === color.value ? 'color-swatch color-swatch--active' : 'color-swatch'}
-                          style={{ backgroundColor: color.value }}
-                          title={color.label}
-                          aria-label={color.label}
-                          onClick={() => setSelectedColor(color.value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="editor-toolbar__group" aria-label="Formato pronto">
-                  <span className="editor-toolbar__group-label">Forma</span>
-                  <div className="editor-toolbar__group-controls">
-                    <select
-                      className="editor-toolbar__technique"
-                      value={selectedShapeId ?? 'none'}
-                      onChange={(event) => handleShapeChange(event.target.value)}
-                    >
-                      <option value="none">Nenhum (desenho livre)</option>
-                      {SHAPE_PRESETS.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="editor-toolbar__group" aria-label="Acoes extras">
-                  <span className="editor-toolbar__group-label">Extras</span>
-                  <div className="editor-toolbar__group-controls">
-                    <button className="tool-button" type="button" onClick={() => { setPaintedCells([]); setCellColors({}); setNotice('Grade limpa. Salve para atualizar o historico.'); }}>Limpar</button>
-                    <button className="tool-button" type="button" onClick={exportCurrentChart}>Exportar PNG</button>
-                    <button className={showStitchLegend ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowStitchLegend((current) => !current)}>Legenda de pontos</button>
-                    <button className={showInstructions ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowInstructions((current) => !current)}>Instrucoes escritas</button>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
         </div>
 
         {activeTechniqueOption.gridReady ? (
@@ -729,43 +789,30 @@ export function EditorPage() {
               <p><strong>{rows}</strong> linhas</p>
               <p><strong>{columns}</strong> colunas</p>
               <p><strong>{paintedCells.length}</strong> celulas pintadas</p>
+              <p><strong>{Math.round(zoom * 100)}%</strong> de zoom</p>
             </div>
-            {technique !== 'tunisian' && usedColorCounts.length > 0 && (
-              <div className="editor-materials" aria-label="Informacoes do grafico">
-                <span className="editor-materials__title">Materiais</span>
-                <ul className="editor-materials__list">
-                  {usedColorCounts.map(([color, count]) => {
-                    const label = PALETTE_COLORS.find((option) => option.value === color)?.label ?? color
-                    const percentage = paintedCells.length === 0 ? 0 : Math.round((count / paintedCells.length) * 1000) / 10
-                    return (
-                      <li key={color} className="editor-materials__item">
-                        <span className="color-swatch color-swatch--static" style={{ backgroundColor: color }} aria-hidden="true" />
-                        <span>{label}</span>
-                        <span>{count} celulas ({percentage}%)</span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            )}
             <div className="chart-grid-shell" ref={gridShellRef}>
               <div
                 className="chart-grid"
+                ref={gridFocusRef}
+                tabIndex={0}
+                onKeyDown={handleGridKeyDown}
                 style={{
-                  gridTemplateColumns: `3rem ${columnWidths.map((width) => `${width}px`).join(' ')}`,
-                  gridTemplateRows: `3rem ${rowHeights.map((height) => `${height}px`).join(' ')}`,
+                  gridTemplateColumns: `${3 * zoom}rem ${columnWidths.map((width) => `${width * zoom}px`).join(' ')}`,
+                  gridTemplateRows: `${3 * zoom}rem ${rowHeights.map((height) => `${height * zoom}px`).join(' ')}`,
+                  fontSize: `${zoom}rem`,
                 }}
               >
                 <span className="chart-grid__corner" aria-hidden="true" />
                 {Array.from({ length: columns }, (_, column) => (
-                  <button key={`column-${column + 1}`} type="button" className={selection?.axis === 'column' && selection.index === column ? 'chart-grid__axis chart-grid__axis--selected' : 'chart-grid__axis'} title="Clique para selecionar. Arraste a borda direita para redimensionar. Duplo clique para duplicar esta coluna." onClick={() => setSelection({ axis: 'column', index: column })} onDoubleClick={() => duplicateSelectedColumn(column)}>
+                  <button key={`column-${column + 1}`} type="button" className="chart-grid__axis" title="Duplo clique para duplicar esta coluna" onDoubleClick={() => duplicateSelectedColumn(column)}>
                     {column + 1}
                     <span className="chart-grid__resize-handle chart-grid__resize-handle--column" onPointerDown={(event) => { event.stopPropagation(); setResizeTarget({ axis: 'column', index: column, startCoordinate: event.clientX, startSize: columnWidths[column] }) }} />
                   </button>
                 ))}
                 {Array.from({ length: rows }, (_, row) => (
                   <Fragment key={`row-${row + 1}`}>
-                    <button key={`row-label-${row + 1}`} type="button" className={selection?.axis === 'row' && selection.index === row ? 'chart-grid__axis chart-grid__axis--row chart-grid__axis--selected' : 'chart-grid__axis chart-grid__axis--row'} title="Clique para selecionar. Arraste a borda inferior para redimensionar. Duplo clique para duplicar esta linha." onClick={() => setSelection({ axis: 'row', index: row })} onDoubleClick={() => duplicateSelectedRow(row)}>
+                    <button key={`row-label-${row + 1}`} type="button" className="chart-grid__axis chart-grid__axis--row" title="Duplo clique para duplicar esta linha" onDoubleClick={() => duplicateSelectedRow(row)}>
                       {row + 1}
                       <span className="chart-grid__resize-handle chart-grid__resize-handle--row" onPointerDown={(event) => { event.stopPropagation(); setResizeTarget({ axis: 'row', index: row, startCoordinate: event.clientY, startSize: rowHeights[row] }) }} />
                     </button>
@@ -774,18 +821,27 @@ export function EditorPage() {
                       const painted = gridCells[cellIndex]
                       const stitchSymbol = cellSymbols[cellIndex]
                       const isTunisian = technique === 'tunisian'
+                      const isCursorCell = !selectedStampId && cursorPosition.row === row && cursorPosition.column === column
+                      const isStampPreviewCell = stampCells.has(cellIndex)
+
+                      const cellClassNames = [
+                        'chart-grid__cell',
+                        isTunisian && stitchSymbol ? `chart-grid__cell--tunisian chart-grid__cell--tunisian-${stitchSymbol}` : '',
+                        !isTunisian && painted ? 'chart-grid__cell--painted' : '',
+                        isCursorCell ? 'chart-grid__cell--cursor' : '',
+                        isStampPreviewCell ? 'chart-grid__cell--stamp-preview' : '',
+                      ].filter(Boolean).join(' ')
 
                       return (
                         <button
                           key={`cell-${row + 1}-${column + 1}`}
                           type="button"
-                          className={isTunisian
-                            ? (stitchSymbol ? `chart-grid__cell chart-grid__cell--tunisian chart-grid__cell--tunisian-${stitchSymbol}` : 'chart-grid__cell')
-                            : (painted ? 'chart-grid__cell chart-grid__cell--painted' : 'chart-grid__cell')}
+                          className={cellClassNames}
                           style={!isTunisian && painted ? { backgroundColor: cellColors[cellIndex] ?? DEFAULT_PAINT_COLOR } : undefined}
                           aria-label={`Linha ${row + 1}, coluna ${column + 1}${isTunisian ? (stitchSymbol ? `, ${stitchSymbol}` : ', vazia') : (painted ? ', preenchida' : ', vazia')}`}
                           onPointerDown={() => {
                             setIsPointerDown(true)
+                            setCursorPosition({ row, column })
                             if (isTunisian) applyTunisianStitchToCell(cellIndex)
                             else applyBrushToCell(cellIndex)
                           }}
@@ -803,7 +859,7 @@ export function EditorPage() {
                 ))}
               </div>
             </div>
-            <p className="editor-workspace__hint">Clique no numero de uma linha ou coluna para seleciona-la. Use Inserir e Antes/Depois para criar uma faixa vazia, ou Remover para apagar a faixa selecionada. O duplo clique no numero duplica a faixa com seu desenho. Salvar guarda o estado atual por usuario em {getEditorStorageMode() === 'supabase' ? 'um registro no Supabase' : 'localStorage'}.</p>
+            <p className="editor-workspace__hint">Clique na grade e use as setas do teclado para navegar quadrado por quadrado; Enter marca a celula selecionada. Ctrl + e Ctrl - aplicam zoom apenas no grafico (Ctrl 0 volta ao normal). Duplo clique no numero de uma linha ou coluna duplica ela com o desenho. Salvar guarda o estado atual por usuario em {getEditorStorageMode() === 'supabase' ? 'um registro no Supabase' : 'localStorage'}.</p>
             {showStitchLegend && (
               <div className="stitch-legend" aria-label="Legenda de pontos de croche">
                 {stitchSymbols.map((symbol) => (
