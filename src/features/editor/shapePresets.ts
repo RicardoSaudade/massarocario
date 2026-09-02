@@ -1,3 +1,5 @@
+import { publicAsset } from '../../lib/publicAsset'
+
 export type ShapePreset = {
   id: string
   label: string
@@ -7,9 +9,9 @@ export type ShapePreset = {
 
 // Silhuetas prontas para preencher a grade sem precisar buscar imagem na internet.
 export const SHAPE_PRESETS: ShapePreset[] = [
-  { id: 'star', label: 'Estrela', src: '/assets/patterns/star.svg', aspectRatio: 1 },
-  { id: 'heart', label: 'Coracao', src: '/assets/patterns/heart.svg', aspectRatio: 1 },
-  { id: 'flower', label: 'Flor', src: '/assets/patterns/flower.svg', aspectRatio: 1 },
+  { id: 'star', label: 'Estrela', src: 'assets/patterns/star.svg', aspectRatio: 1 },
+  { id: 'heart', label: 'Coracao', src: 'assets/patterns/heart.svg', aspectRatio: 1 },
+  { id: 'flower', label: 'Flor', src: 'assets/patterns/flower.svg', aspectRatio: 1 },
 ]
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -17,7 +19,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     const image = new Image()
     image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('Nao foi possivel carregar a imagem do formato.'))
-    image.src = src
+    image.src = publicAsset(src)
   })
 }
 

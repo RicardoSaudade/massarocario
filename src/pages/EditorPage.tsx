@@ -5,6 +5,7 @@ import { createEmptyChart, DEFAULT_CELL_SIZE, DEFAULT_PAINT_COLOR, DEFAULT_TECHN
 import { rasterizeShapeToGrid, SHAPE_PRESETS } from '../features/editor/shapePresets'
 import { stitchSymbols } from '../features/editor/stitchSymbols'
 import { buildWrittenInstructions } from '../features/editor/writtenInstructions'
+import { publicAsset } from '../lib/publicAsset'
 
 type BrushMode = 'paint' | 'erase'
 type TunisianTool = TunisianStitch | 'erase'
@@ -570,7 +571,7 @@ export function EditorPage() {
     >
       <aside className="editor-sidebar">
         <div className="editor-sidebar__header">
-          <img className="editor-sidebar__profile" src="/assets/fotoAline.jfif" alt="Aline, criadora do projeto" />
+          <img className="editor-sidebar__profile" src={publicAsset('assets/fotoAline.jfif')} alt="Aline, criadora do projeto" />
           <div>
             <p className="eyebrow">area da criadora</p>
             <h1 id="editor-title">Seus graficos</h1>
@@ -807,7 +808,7 @@ export function EditorPage() {
               <div className="stitch-legend" aria-label="Legenda de pontos de croche">
                 {stitchSymbols.map((symbol) => (
                   <div className="stitch-legend__item" key={symbol.key}>
-                    <img className="stitch-legend__icon" src={symbol.icon} alt="" width={32} height={32} />
+                    <img className="stitch-legend__icon" src={publicAsset(symbol.icon)} alt="" width={32} height={32} />
                     <div className="stitch-legend__meta">
                       <strong>{symbol.name}</strong>
                       <span>{symbol.abbreviationPtBr} / {symbol.abbreviationEn}</span>
