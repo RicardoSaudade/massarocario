@@ -32,8 +32,24 @@ export function buildWrittenInstructions(rows: number, columns: number, paintedC
       return color ? (codeByColor.get(color) ?? 'X') : 'X'
     })
 
-    const direction = isRightToLeft ? 'direita -> esquerda' : 'esquerda -> direita'
-    lines.push(`Carreira ${carreira} (${direction}): ${cells.join(' ')}`)
+    // Agrupa celulas iguais consecutivas para virar "N espacos, N blocos, ...".
+    const runs: { token: string; count: number }[] = []
+    for (const token of cells) {
+      const lastRun = runs[runs.length - 1]
+      if (lastRun && lastRun.token === token) lastRun.count += 1
+      else runs.push({ token, count: 1 })
+    }
+
+    const description = runs
+      .map(({ token, count }) => {
+        if (token === '-') return `${count} ${count === 1 ? 'espaco' : 'espacos'}`
+        const noun = count === 1 ? 'bloco' : 'blocos'
+        return usedColors.length > 1 ? `${count} ${noun} ${token}` : `${count} ${noun}`
+      })
+      .join(', ')
+
+    const direction = isRightToLeft ? '\u2192' : '\u2190'
+    lines.push(`${carreira}. Carreira ${carreira} (${direction}): ${description}`)
   }
 
   return { legend, lines }
