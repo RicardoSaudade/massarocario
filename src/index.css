@@ -86,7 +86,7 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 .stamp-button { display: grid; place-items: center; width: 3rem; height: 3rem; padding: .3rem; border: 1px solid #d9d0bd; background: #fffdf7; }
 .stamp-button:hover { border-color: #243d3a; }
 .stamp-button--active { border-color: #243d3a; background: #f3d862; }
-.editor-history { display: grid; gap: .9rem; align-content: start; overflow: auto; padding-right: .2rem; }
+.editor-history { display: grid; gap: .9rem; align-content: start; max-height: min(38vh, 320px); overflow-y: auto; padding-right: .2rem; }
 .editor-history__empty { margin: 0; padding: 1rem; border: 1px dashed #c8bea8; background: #faf4e7; font-size: .76rem; line-height: 1.65; }
 .history-card { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: .9rem; align-items: center; width: 100%; padding: .85rem; border: 1px solid #d9d0bd; background: #fcf8ee; color: #243d3a; text-align: left; }
 .history-card:hover, .history-card--active { border-color: #243d3a; box-shadow: 5px 5px 0 #f3d862; }

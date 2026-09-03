@@ -11,7 +11,9 @@ type BrushMode = 'paint' | 'erase'
 type TunisianTool = TunisianStitch | 'erase'
 type ResizeTarget = { axis: 'row' | 'column'; index: number; startCoordinate: number; startSize: number } | null
 type GridPosition = { row: number; column: number }
-const STAMP_SIZE = 7
+const DEFAULT_STAMP_SIZE = 13
+const STAMP_SIZE_MIN = 3
+const STAMP_SIZE_MAX = 40
 const ZOOM_STEP = 0.15
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 3
@@ -111,6 +113,12 @@ export function EditorPage() {
   const [stampMask, setStampMask] = useState<GridPosition[] | null>(null)
   const [stampPosition, setStampPosition] = useState<GridPosition | null>(null)
   const [zoom, setZoom] = useState(1)
+  // Rascunho dos campos numericos: enquanto nao for null, o usuario ainda esta digitando (inclusive vazio).
+  const [rowsDraft, setRowsDraft] = useState<string | null>(null)
+  const [columnsDraft, setColumnsDraft] = useState<string | null>(null)
+  const [stampSize, setStampSize] = useState(DEFAULT_STAMP_SIZE)
+  const [stampSizeDraft, setStampSizeDraft] = useState<string | null>(null)
+  const [paintOnClick, setPaintOnClick] = useState(true)
   const gridShellRef = useRef<HTMLDivElement>(null)
   const gridFocusRef = useRef<HTMLDivElement>(null)
   const hasAutoFilledRef = useRef(false)
@@ -504,6 +512,20 @@ export function EditorPage() {
     updateDimensions(rows, nextColumns)
   }
 
+  const handleRowsInput = (rawValue: string) => {
+    setRowsDraft(rawValue)
+    const parsed = Number(rawValue)
+    if (rawValue === '' || Number.isNaN(parsed) || parsed < 1) return
+    updateDimensions(parsed, columns)
+  }
+
+  const handleColumnsInput = (rawValue: string) => {
+    setColumnsDraft(rawValue)
+    const parsed = Number(rawValue)
+    if (rawValue === '' || Number.isNaN(parsed) || parsed < 1) return
+    handleColumnsFieldChange(parsed)
+  }
+
   const handleProfilePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -518,29 +540,55 @@ export function EditorPage() {
     setStampPosition(null)
   }
 
+  const clearGrid = () => {
+    setPaintedCells([])
+    setCellColors({})
+    setCellSymbols({})
+    setNotice('Grade limpa. Salve para atualizar o historico.')
+  }
+
+  const loadStampMask = async (presetId: string, size: number) => {
+    const preset = SHAPE_PRESETS.find((option) => option.id === presetId)
+    if (!preset) return
+
+    try {
+      const paintedOffsets = await rasterizeShapeToGrid(preset.src, size, size)
+      setSelectedStampId(presetId)
+      setStampMask(paintedOffsets.map((index) => ({ row: Math.floor(index / size), column: index % size })))
+      setStampPosition((current) => {
+        const maxRow = Math.max(0, rows - size)
+        const maxColumn = Math.max(0, columns - size)
+        if (current) return { row: Math.min(current.row, maxRow), column: Math.min(current.column, maxColumn) }
+        return { row: Math.floor(maxRow / 2), column: Math.floor(maxColumn / 2) }
+      })
+      return preset
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nao foi possivel carregar o carimbo.')
+    }
+  }
+
   const handleSelectStamp = async (presetId: string) => {
     if (presetId === (selectedStampId ?? 'none')) {
       cancelStamp()
       return
     }
 
-    const preset = SHAPE_PRESETS.find((option) => option.id === presetId)
+    setStampPosition(null)
+    const preset = await loadStampMask(presetId, stampSize)
     if (!preset) return
 
-    try {
-      const paintedOffsets = await rasterizeShapeToGrid(preset.src, STAMP_SIZE, STAMP_SIZE)
-      const mask = paintedOffsets.map((index) => ({ row: Math.floor(index / STAMP_SIZE), column: index % STAMP_SIZE }))
-      setSelectedStampId(presetId)
-      setStampMask(mask)
-      setStampPosition({
-        row: Math.max(0, Math.min(rows - 1, Math.floor(rows / 2) - Math.floor(STAMP_SIZE / 2))),
-        column: Math.max(0, Math.min(columns - 1, Math.floor(columns / 2) - Math.floor(STAMP_SIZE / 2))),
-      })
-      setNotice(`Carimbo "${preset.label}" selecionado. Use as setas para mover e Enter para aplicar na grade.`)
-      gridFocusRef.current?.focus()
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Nao foi possivel carregar o carimbo.')
-    }
+    setNotice(`Carimbo "${preset.label}" selecionado em ${stampSize}x${stampSize}. Use as setas para mover e Enter para aplicar na grade.`)
+    gridFocusRef.current?.focus()
+  }
+
+  const handleStampSizeInput = (rawValue: string) => {
+    setStampSizeDraft(rawValue)
+    const parsed = Number(rawValue)
+    if (rawValue === '' || Number.isNaN(parsed) || parsed < STAMP_SIZE_MIN) return
+
+    const nextSize = Math.min(STAMP_SIZE_MAX, parsed)
+    setStampSize(nextSize)
+    if (selectedStampId) void loadStampMask(selectedStampId, nextSize)
   }
 
   const stampCells = useMemo(() => {
@@ -561,8 +609,8 @@ export function EditorPage() {
       setStampPosition((current) => {
         const base = current ?? { row: 0, column: 0 }
         return {
-          row: Math.max(0, Math.min(rows - 1, base.row + deltaRow)),
-          column: Math.max(0, Math.min(columns - 1, base.column + deltaColumn)),
+          row: Math.max(0, Math.min(Math.max(0, rows - stampSize), base.row + deltaRow)),
+          column: Math.max(0, Math.min(Math.max(0, columns - stampSize), base.column + deltaColumn)),
         }
       })
       return
@@ -702,13 +750,16 @@ export function EditorPage() {
                     <button className={brushMode === 'erase' ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setBrushMode('erase')}>Apagar</button>
                   </>
                 )}
+                <button className={paintOnClick ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setPaintOnClick((current) => !current)} title="Quando desligado, o clique apenas seleciona a celula e voce marca com Enter">
+                  {paintOnClick ? 'Clique pinta' : 'Clique so seleciona'}
+                </button>
               </div>
             </div>
             <div className="editor-toolbar__group" aria-label="Tamanho da grade">
               <span className="editor-toolbar__group-label">Grade</span>
               <div className="editor-toolbar__group-controls editor-toolbar__group-controls--dimensions">
-                <label>Linhas <input type="number" min="1" max="80" value={rows} onChange={(event) => updateDimensions(Number(event.target.value), columns)} /></label>
-                <label>{selectedShapeId ? 'Largura do padrao' : 'Colunas'} <input type="number" min="1" max="80" value={columns} onChange={(event) => handleColumnsFieldChange(Number(event.target.value))} /></label>
+                <label>Linhas <input type="number" min="1" max="80" value={rowsDraft ?? rows} onChange={(event) => handleRowsInput(event.target.value)} onBlur={() => setRowsDraft(null)} /></label>
+                <label>{selectedShapeId ? 'Largura do padrao' : 'Colunas'} <input type="number" min="1" max="80" value={columnsDraft ?? columns} onChange={(event) => handleColumnsInput(event.target.value)} onBlur={() => setColumnsDraft(null)} /></label>
                 <button className="tool-button" type="button" onClick={makeGridSquare}>Quadrado</button>
               </div>
             </div>
@@ -742,12 +793,14 @@ export function EditorPage() {
                   </button>
                 ))}
               </div>
+              <div className="editor-toolbar__group-controls editor-toolbar__group-controls--dimensions">
+                <label>Tamanho (celulas) <input type="number" min={STAMP_SIZE_MIN} max={STAMP_SIZE_MAX} value={stampSizeDraft ?? stampSize} onChange={(event) => handleStampSizeInput(event.target.value)} onBlur={() => setStampSizeDraft(null)} /></label>
+              </div>
               {selectedStampId && <p className="editor-toolbar__hint-small">Setas movem o carimbo. Enter aplica. Esc cancela.</p>}
             </div>
             <div className="editor-toolbar__group" aria-label="Acoes extras">
               <span className="editor-toolbar__group-label">Extras</span>
               <div className="editor-toolbar__group-controls">
-                <button className="tool-button" type="button" onClick={() => { setPaintedCells([]); setCellColors({}); setNotice('Grade limpa. Salve para atualizar o historico.'); }}>Limpar</button>
                 <button className="tool-button" type="button" onClick={exportCurrentChart}>Exportar PNG</button>
                 <button className={showStitchLegend ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowStitchLegend((current) => !current)}>Legenda de pontos</button>
                 <button className={showInstructions ? 'tool-button tool-button--active' : 'tool-button'} type="button" onClick={() => setShowInstructions((current) => !current)}>Instrucoes escritas</button>
@@ -777,6 +830,7 @@ export function EditorPage() {
               </select>
             </div>
             <div className="editor-toolbar__group editor-toolbar__group--actions">
+              {activeTechniqueOption.gridReady && <button className="button button--secondary" type="button" onClick={clearGrid}>Limpar</button>}
               <button className="button button--secondary" type="button" onClick={() => void removeCurrentChart()}>Excluir</button>
               <button className="button button--primary" type="button" onClick={() => void saveCurrentChart()} disabled={isSaving}>{isSaving ? 'Salvando...' : 'Salvar'}</button>
             </div>
@@ -842,11 +896,13 @@ export function EditorPage() {
                           onPointerDown={() => {
                             setIsPointerDown(true)
                             setCursorPosition({ row, column })
+                            gridFocusRef.current?.focus()
+                            if (!paintOnClick) return
                             if (isTunisian) applyTunisianStitchToCell(cellIndex)
                             else applyBrushToCell(cellIndex)
                           }}
                           onPointerEnter={() => {
-                            if (!isPointerDown) return
+                            if (!isPointerDown || !paintOnClick) return
                             if (isTunisian) applyTunisianStitchToCell(cellIndex)
                             else applyBrushToCell(cellIndex)
                           }}
