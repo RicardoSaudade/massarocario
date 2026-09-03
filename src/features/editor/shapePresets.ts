@@ -12,6 +12,7 @@ export const SHAPE_PRESETS: ShapePreset[] = [
   { id: 'star', label: 'Estrela', src: 'assets/patterns/star.svg', aspectRatio: 1 },
   { id: 'heart', label: 'Coracao', src: 'assets/patterns/heart.svg', aspectRatio: 1 },
   { id: 'flower', label: 'Flor', src: 'assets/patterns/flower.svg', aspectRatio: 1 },
+  { id: 'iris', label: 'Iris (flor filet)', src: 'assets/patterns/iris.svg', aspectRatio: 0.75 },
   { id: 'circle', label: 'Circulo', src: 'assets/patterns/circle.svg', aspectRatio: 1 },
   { id: 'diamond', label: 'Losango', src: 'assets/patterns/diamond.svg', aspectRatio: 1 },
   { id: 'triangle', label: 'Triangulo', src: 'assets/patterns/triangle.svg', aspectRatio: 1 },
