@@ -9,8 +9,8 @@ import { publicAsset } from '../lib/publicAsset'
 
 type BrushMode = 'paint' | 'erase'
 type TunisianTool = TunisianStitch | 'erase'
-type ResizeTarget = { axis: 'row' | 'column'; index: number; startCoordinate: number; startSize: number } | null
 type GridPosition = { row: number; column: number }
+type DragStampRect = { row: number; column: number; size: number }
 const DEFAULT_STAMP_SIZE = 13
 const STAMP_SIZE_MIN = 3
 const STAMP_SIZE_MAX = 40
@@ -100,7 +100,9 @@ export function EditorPage() {
   const [loadError, setLoadError] = useState('')
   const [brushMode, setBrushMode] = useState<BrushMode>('paint')
   const [isPointerDown, setIsPointerDown] = useState(false)
-  const [resizeTarget, setResizeTarget] = useState<ResizeTarget>(null)
+  const [dragStampOrigin, setDragStampOrigin] = useState<GridPosition | null>(null)
+  const [dragStampRect, setDragStampRect] = useState<DragStampRect | null>(null)
+  const [dragStampMask, setDragStampMask] = useState<GridPosition[] | null>(null)
   const [showStitchLegend, setShowStitchLegend] = useState(false)
   const [technique, setTechnique] = useState<CrochetTechnique>(DEFAULT_TECHNIQUE)
   const [cellSymbols, setCellSymbols] = useState<Record<number, TunisianStitch>>({})
@@ -122,9 +124,10 @@ export function EditorPage() {
   const [stampHeight, setStampHeight] = useState(DEFAULT_STAMP_SIZE)
   const [stampWidthDraft, setStampWidthDraft] = useState<string | null>(null)
   const [stampHeightDraft, setStampHeightDraft] = useState<string | null>(null)
-  const [paintOnClick, setPaintOnClick] = useState(true)
+  const [paintOnClick, setPaintOnClick] = useState(false)
   const gridShellRef = useRef<HTMLDivElement>(null)
   const gridFocusRef = useRef<HTMLDivElement>(null)
+  const stampMaskCacheRef = useRef(new Map<string, GridPosition[]>())
   const hasAutoFilledRef = useRef(false)
 
   useEffect(() => {
@@ -624,16 +627,72 @@ export function EditorPage() {
 
   const stampCells = useMemo(() => {
     const cells = new Set<number>()
-    if (!selectedStampId || !stampMask || !stampPosition) return cells
+    if (!selectedStampId) return cells
 
-    for (const offset of stampMask) {
-      const cellRow = stampPosition.row + offset.row
-      const cellColumn = stampPosition.column + offset.column
+    const mask = dragStampRect ? dragStampMask : stampMask
+    const anchor = dragStampRect ?? stampPosition
+    if (!mask || !anchor) return cells
+
+    for (const offset of mask) {
+      const cellRow = anchor.row + offset.row
+      const cellColumn = anchor.column + offset.column
       if (cellRow >= 0 && cellRow < rows && cellColumn >= 0 && cellColumn < columns) cells.add(cellRow * columns + cellColumn)
     }
 
     return cells
-  }, [columns, rows, selectedStampId, stampMask, stampPosition])
+  }, [columns, dragStampMask, dragStampRect, rows, selectedStampId, stampMask, stampPosition])
+
+  const applyStampCells = (cells: Set<number>) => {
+    if (cells.size === 0) return
+    setPaintedCells((currentCells) => [...new Set([...currentCells, ...cells])].sort((left, right) => left - right))
+    setCellColors((currentColors) => {
+      const nextColors = { ...currentColors }
+      cells.forEach((cellIndex) => { nextColors[cellIndex] = DEFAULT_PAINT_COLOR })
+      return nextColors
+    })
+  }
+
+  // Arrastar com um carimbo ativo desenha um quadrado que cresce na direcao do ponteiro.
+  const updateDragStamp = async (row: number, column: number) => {
+    if (!selectedStampId || !dragStampOrigin) return
+
+    const deltaRow = row - dragStampOrigin.row
+    const deltaColumn = column - dragStampOrigin.column
+    const size = Math.max(Math.abs(deltaRow), Math.abs(deltaColumn)) + 1
+
+    setDragStampRect({
+      row: deltaRow >= 0 ? dragStampOrigin.row : dragStampOrigin.row - size + 1,
+      column: deltaColumn >= 0 ? dragStampOrigin.column : dragStampOrigin.column - size + 1,
+      size,
+    })
+
+    const cacheKey = `${selectedStampId}:${size}`
+    const cached = stampMaskCacheRef.current.get(cacheKey)
+    if (cached) {
+      setDragStampMask(cached)
+      return
+    }
+
+    const preset = SHAPE_PRESETS.find((option) => option.id === selectedStampId)
+    if (!preset) return
+
+    const paintedOffsets = await rasterizeShapeToGrid(preset.src, size, size)
+    const mask = paintedOffsets.map((index) => ({ row: Math.floor(index / size), column: index % size }))
+    stampMaskCacheRef.current.set(cacheKey, mask)
+    setDragStampMask(mask)
+  }
+
+  const finishDragStamp = () => {
+    setIsPointerDown(false)
+    if (dragStampRect) {
+      applyStampCells(stampCells)
+      setNotice(`Carimbo aplicado em ${dragStampRect.size}x${dragStampRect.size}.`)
+    }
+
+    setDragStampOrigin(null)
+    setDragStampRect(null)
+    setDragStampMask(null)
+  }
 
   const moveCursorOrStamp = (deltaRow: number, deltaColumn: number) => {
     if (selectedStampId) {
@@ -655,12 +714,7 @@ export function EditorPage() {
 
   const confirmSelection = () => {
     if (selectedStampId && stampCells.size > 0) {
-      setPaintedCells((currentCells) => [...new Set([...currentCells, ...stampCells])].sort((left, right) => left - right))
-      setCellColors((currentColors) => {
-        const nextColors = { ...currentColors }
-        stampCells.forEach((cellIndex) => { nextColors[cellIndex] = DEFAULT_PAINT_COLOR })
-        return nextColors
-      })
+      applyStampCells(stampCells)
       setNotice('Carimbo aplicado na grade.')
       return
     }
@@ -695,15 +749,8 @@ export function EditorPage() {
     <section
       className="editor-page"
       aria-labelledby="editor-title"
-      onPointerMove={(event) => {
-        if (!resizeTarget) return
-        const coordinate = resizeTarget.axis === 'column' ? event.clientX : event.clientY
-        const nextSize = Math.max(18, Math.min(96, resizeTarget.startSize + (coordinate - resizeTarget.startCoordinate) / zoom))
-        if (resizeTarget.axis === 'column') setColumnWidths((currentSizes) => currentSizes.map((size, index) => index === resizeTarget.index ? nextSize : size))
-        else setRowHeights((currentSizes) => currentSizes.map((size, index) => index === resizeTarget.index ? nextSize : size))
-      }}
-      onPointerUp={() => { setIsPointerDown(false); setResizeTarget(null) }}
-      onPointerLeave={() => { setIsPointerDown(false); setResizeTarget(null) }}
+      onPointerUp={finishDragStamp}
+      onPointerLeave={finishDragStamp}
     >
       <aside className="editor-sidebar">
         <div className="editor-sidebar__header">
@@ -884,23 +931,15 @@ export function EditorPage() {
                 tabIndex={0}
                 onKeyDown={handleGridKeyDown}
                 style={{
-                  gridTemplateColumns: `${3 * zoom}rem ${columnWidths.map((width) => `${width * zoom}px`).join(' ')}`,
-                  gridTemplateRows: `${3 * zoom}rem ${rowHeights.map((height) => `${height * zoom}px`).join(' ')}`,
+                  gridTemplateColumns: `${3 * zoom}rem repeat(${columns}, ${DEFAULT_CELL_SIZE * zoom}px) ${3 * zoom}rem`,
+                  gridTemplateRows: `repeat(${rows}, ${DEFAULT_CELL_SIZE * zoom}px) ${3 * zoom}rem`,
                   fontSize: `${zoom}rem`,
                 }}
               >
-                <span className="chart-grid__corner" aria-hidden="true" />
-                {Array.from({ length: columns }, (_, column) => (
-                  <button key={`column-${column + 1}`} type="button" className="chart-grid__axis" title="Duplo clique para duplicar esta coluna" onDoubleClick={() => duplicateSelectedColumn(column)}>
-                    {column + 1}
-                    <span className="chart-grid__resize-handle chart-grid__resize-handle--column" onPointerDown={(event) => { event.stopPropagation(); setResizeTarget({ axis: 'column', index: column, startCoordinate: event.clientX, startSize: columnWidths[column] }) }} />
-                  </button>
-                ))}
                 {Array.from({ length: rows }, (_, row) => (
                   <Fragment key={`row-${row + 1}`}>
-                    <button key={`row-label-${row + 1}`} type="button" className="chart-grid__axis chart-grid__axis--row" title="Duplo clique para duplicar esta linha" onDoubleClick={() => duplicateSelectedRow(row)}>
+                    <button key={`row-left-${row + 1}`} type="button" className="chart-grid__axis chart-grid__axis--row" title="Duplo clique para duplicar esta linha" onDoubleClick={() => duplicateSelectedRow(row)}>
                       {row + 1}
-                      <span className="chart-grid__resize-handle chart-grid__resize-handle--row" onPointerDown={(event) => { event.stopPropagation(); setResizeTarget({ axis: 'row', index: row, startCoordinate: event.clientY, startSize: rowHeights[row] }) }} />
                     </button>
                     {Array.from({ length: columns }, (_, column) => {
                       const cellIndex = row * columns + column
@@ -931,12 +970,26 @@ export function EditorPage() {
                             setIsPointerDown(true)
                             setCursorPosition({ row, column })
                             gridFocusRef.current?.focus()
+
+                            if (selectedStampId) {
+                              setDragStampOrigin({ row, column })
+                              void updateDragStamp(row, column)
+                              return
+                            }
+
                             if (!paintOnClick) return
                             if (isTunisian) applyTunisianStitchToCell(cellIndex)
                             else applyBrushToCell(cellIndex)
                           }}
                           onPointerEnter={() => {
-                            if (!isPointerDown || !paintOnClick) return
+                            if (!isPointerDown) return
+
+                            if (selectedStampId && dragStampOrigin) {
+                              void updateDragStamp(row, column)
+                              return
+                            }
+
+                            if (!paintOnClick) return
                             if (isTunisian) applyTunisianStitchToCell(cellIndex)
                             else applyBrushToCell(cellIndex)
                           }}
@@ -945,11 +998,22 @@ export function EditorPage() {
                         </button>
                       )
                     })}
+                    <button key={`row-right-${row + 1}`} type="button" className="chart-grid__axis chart-grid__axis--row" title="Duplo clique para duplicar esta linha" onDoubleClick={() => duplicateSelectedRow(row)}>
+                      {row + 1}
+                    </button>
                   </Fragment>
                 ))}
+
+                <span className="chart-grid__corner" aria-hidden="true" />
+                {Array.from({ length: columns }, (_, column) => (
+                  <button key={`column-bottom-${column + 1}`} type="button" className="chart-grid__axis" title="Duplo clique para duplicar esta coluna" onDoubleClick={() => duplicateSelectedColumn(column)}>
+                    {column + 1}
+                  </button>
+                ))}
+                <span className="chart-grid__corner" aria-hidden="true" />
               </div>
             </div>
-            <p className="editor-workspace__hint">Clique na grade e use as setas do teclado para navegar quadrado por quadrado; Enter marca a celula selecionada. Ctrl + e Ctrl - aplicam zoom apenas no grafico (Ctrl 0 volta ao normal). Duplo clique no numero de uma linha ou coluna duplica ela com o desenho. Salvar guarda o estado atual por usuario em {getEditorStorageMode() === 'supabase' ? 'um registro no Supabase' : 'localStorage'}.</p>
+            <p className="editor-workspace__hint">Com um carimbo selecionado, arraste na grade para desenha-lo num quadrado do tamanho do arrasto; sem carimbo, use as setas para navegar e Enter para marcar. Ctrl + e Ctrl - aplicam zoom apenas no grafico (Ctrl 0 volta ao normal). Duplo clique no numero de uma linha ou coluna duplica ela com o desenho. Salvar guarda o estado atual por usuario em {getEditorStorageMode() === 'supabase' ? 'um registro no Supabase' : 'localStorage'}.</p>
             {showStitchLegend && (
               <div className="stitch-legend" aria-label="Legenda de pontos de croche">
                 {stitchSymbols.map((symbol) => (
