@@ -127,8 +127,8 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 .chart-grid__axis { position: relative; border: 0; background: #efe7d8; color: #243d3a; font: inherit; font-size: .65em; }
 .chart-grid__axis:hover { background: #f3d862; }
 .chart-grid__axis--selected { background: #243d3a; color: #fff; }
-.chart-grid__axis--row { position: sticky; left: 0; z-index: 1; }
-.chart-grid__corner { position: sticky; left: 0; z-index: 2; background: #e4d9c8; }
+.chart-grid__axis--row { position: relative; }
+.chart-grid__corner { background: #e4d9c8; }
 .chart-grid__resize-handle { position: absolute; z-index: 3; background: transparent; }
 .chart-grid__resize-handle--column { top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; }
 .chart-grid__resize-handle--row { right: 0; bottom: -4px; left: 0; height: 8px; cursor: row-resize; }
@@ -196,8 +196,6 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
   .editor-workspace { gap: .85rem; padding: 1rem; }
   .editor-summary p { padding: .4rem .6rem; font-size: .66rem; }
   .chart-grid-shell { padding: .4rem; }
-  /* Sem sticky no celular: a coluna de numeros ficava presa por cima do desenho. */
-  .chart-grid__axis--row, .chart-grid__corner { position: static; }
   .written-instructions { padding: .8rem; max-height: 20rem; }
   .written-instructions__body { font-size: .7rem; }
   .editor-workspace__hint { font-size: .7rem; }
