@@ -134,26 +134,21 @@ export function EditorPage() {
     const handleZoomShortcut = (event: globalThis.KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return
 
-      if (event.key === '+' || event.key === '=') {
-        event.preventDefault()
-        setZoom((current) => Math.min(ZOOM_MAX, Math.round((current + ZOOM_STEP) * 100) / 100))
-        return
-      }
+      // Combina key e code porque em teclados ABNT2 o '+' exige Shift e o numerico usa outro code.
+      const isZoomIn = event.key === '+' || event.key === '=' || event.code === 'Equal' || event.code === 'NumpadAdd'
+      const isZoomOut = event.key === '-' || event.key === '_' || event.code === 'Minus' || event.code === 'NumpadSubtract'
+      const isZoomReset = event.key === '0' || event.code === 'Digit0' || event.code === 'Numpad0'
 
-      if (event.key === '-' || event.key === '_') {
-        event.preventDefault()
-        setZoom((current) => Math.max(ZOOM_MIN, Math.round((current - ZOOM_STEP) * 100) / 100))
-        return
-      }
+      if (!isZoomIn && !isZoomOut && !isZoomReset) return
+      event.preventDefault()
 
-      if (event.key === '0') {
-        event.preventDefault()
-        setZoom(1)
-      }
+      if (isZoomIn) setZoom((current) => Math.min(ZOOM_MAX, Math.round((current + ZOOM_STEP) * 100) / 100))
+      else if (isZoomOut) setZoom((current) => Math.max(ZOOM_MIN, Math.round((current - ZOOM_STEP) * 100) / 100))
+      else setZoom(1)
     }
 
-    window.addEventListener('keydown', handleZoomShortcut)
-    return () => window.removeEventListener('keydown', handleZoomShortcut)
+    window.addEventListener('keydown', handleZoomShortcut, { capture: true })
+    return () => window.removeEventListener('keydown', handleZoomShortcut, { capture: true })
   }, [])
 
   useEffect(() => {
