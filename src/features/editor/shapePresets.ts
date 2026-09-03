@@ -12,6 +12,14 @@ export const SHAPE_PRESETS: ShapePreset[] = [
   { id: 'star', label: 'Estrela', src: 'assets/patterns/star.svg', aspectRatio: 1 },
   { id: 'heart', label: 'Coracao', src: 'assets/patterns/heart.svg', aspectRatio: 1 },
   { id: 'flower', label: 'Flor', src: 'assets/patterns/flower.svg', aspectRatio: 1 },
+  { id: 'circle', label: 'Circulo', src: 'assets/patterns/circle.svg', aspectRatio: 1 },
+  { id: 'diamond', label: 'Losango', src: 'assets/patterns/diamond.svg', aspectRatio: 1 },
+  { id: 'triangle', label: 'Triangulo', src: 'assets/patterns/triangle.svg', aspectRatio: 1 },
+  { id: 'cross', label: 'Cruz', src: 'assets/patterns/cross.svg', aspectRatio: 1 },
+  { id: 'moon', label: 'Lua', src: 'assets/patterns/moon.svg', aspectRatio: 1 },
+  { id: 'leaf', label: 'Folha', src: 'assets/patterns/leaf.svg', aspectRatio: 1 },
+  { id: 'butterfly', label: 'Borboleta', src: 'assets/patterns/butterfly.svg', aspectRatio: 1 },
+  { id: 'paw', label: 'Patinha', src: 'assets/patterns/paw.svg', aspectRatio: 1 },
 ]
 
 function loadImage(src: string): Promise<HTMLImageElement> {

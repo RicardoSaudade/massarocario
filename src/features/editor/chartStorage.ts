@@ -95,6 +95,10 @@ export function getChartStorageKey(email: string) {
   return `${storagePrefix}${email.toLowerCase()}`
 }
 
+export function getProfilePhotoStorageKey(email: string) {
+  return `massarocario:profile-photo:${email.toLowerCase()}`
+}
+
 export function resizePaintedCells(paintedCells: number[], previousColumns: number, rows: number, columns: number) {
   return paintedCells.flatMap((cellIndex) => {
     const row = Math.floor(cellIndex / previousColumns)

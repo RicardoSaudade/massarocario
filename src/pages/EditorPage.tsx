@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useAuth } from '../features/auth/AuthContext'
 import { deleteChart, getEditorStorageMode, listCharts, saveChart } from '../features/editor/chartRepository'
-import { createEmptyChart, DEFAULT_CELL_SIZE, DEFAULT_PAINT_COLOR, DEFAULT_TECHNIQUE, DEFAULT_TUNISIAN_STITCH, duplicateColumn, duplicateColumnInMap, duplicateRow, duplicateRowInMap, normalizeGridSizes, resizeCellMap, TECHNIQUE_OPTIONS, TUNISIAN_STITCH_OPTIONS, type CrochetChart, type CrochetTechnique, type TunisianStitch, GRID_COLUMNS, GRID_ROWS, resizePaintedCells } from '../features/editor/chartStorage'
+import { createEmptyChart, DEFAULT_CELL_SIZE, DEFAULT_PAINT_COLOR, DEFAULT_TECHNIQUE, DEFAULT_TUNISIAN_STITCH, duplicateColumn, duplicateColumnInMap, duplicateRow, duplicateRowInMap, getProfilePhotoStorageKey, normalizeGridSizes, resizeCellMap, TECHNIQUE_OPTIONS, TUNISIAN_STITCH_OPTIONS, type CrochetChart, type CrochetTechnique, type TunisianStitch, GRID_COLUMNS, GRID_ROWS, resizePaintedCells } from '../features/editor/chartStorage'
 import { rasterizeShapeToGrid, SHAPE_PRESETS } from '../features/editor/shapePresets'
 import { stitchSymbols } from '../features/editor/stitchSymbols'
 import { buildWrittenInstructions } from '../features/editor/writtenInstructions'
@@ -15,6 +15,7 @@ const DEFAULT_STAMP_SIZE = 13
 const STAMP_SIZE_MIN = 3
 const STAMP_SIZE_MAX = 40
 const BLOCK_SIZE = 5
+const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024
 const ZOOM_STEP = 0.15
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 3
@@ -113,22 +114,27 @@ export function EditorPage() {
   const [selectedStampId, setSelectedStampId] = useState<string | null>(null)
   const [stampMask, setStampMask] = useState<GridPosition[] | null>(null)
   const [stampPosition, setStampPosition] = useState<GridPosition | null>(null)
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(() => (typeof window !== 'undefined' && window.innerWidth <= 680 ? 0.6 : 1))
   // Rascunho dos campos numericos: enquanto nao for null, o usuario ainda esta digitando (inclusive vazio).
   const [rowsDraft, setRowsDraft] = useState<string | null>(null)
   const [columnsDraft, setColumnsDraft] = useState<string | null>(null)
-  const [stampSize, setStampSize] = useState(DEFAULT_STAMP_SIZE)
-  const [stampSizeDraft, setStampSizeDraft] = useState<string | null>(null)
+  const [stampWidth, setStampWidth] = useState(DEFAULT_STAMP_SIZE)
+  const [stampHeight, setStampHeight] = useState(DEFAULT_STAMP_SIZE)
+  const [stampWidthDraft, setStampWidthDraft] = useState<string | null>(null)
+  const [stampHeightDraft, setStampHeightDraft] = useState<string | null>(null)
   const [paintOnClick, setPaintOnClick] = useState(true)
   const gridShellRef = useRef<HTMLDivElement>(null)
   const gridFocusRef = useRef<HTMLDivElement>(null)
   const hasAutoFilledRef = useRef(false)
 
   useEffect(() => {
-    return () => {
-      if (profilePhotoUrl) URL.revokeObjectURL(profilePhotoUrl)
+    if (!user) {
+      setProfilePhotoUrl(null)
+      return
     }
-  }, [profilePhotoUrl])
+
+    setProfilePhotoUrl(window.localStorage.getItem(getProfilePhotoStorageKey(user.email)))
+  }, [user])
 
   // Intercepta o zoom nativo do navegador para escalar somente o grafico.
   useEffect(() => {
@@ -526,8 +532,27 @@ export function EditorPage() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (profilePhotoUrl) URL.revokeObjectURL(profilePhotoUrl)
-    setProfilePhotoUrl(URL.createObjectURL(file))
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+      setNotice('A foto precisa ter no maximo 2 MB.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : null
+      if (!dataUrl) return
+
+      setProfilePhotoUrl(dataUrl)
+      if (user) {
+        try {
+          window.localStorage.setItem(getProfilePhotoStorageKey(user.email), dataUrl)
+        } catch {
+          setNotice('A foto foi aplicada, mas nao coube no armazenamento do navegador.')
+        }
+      }
+    }
+    reader.onerror = () => setNotice('Nao foi possivel ler a imagem escolhida.')
+    reader.readAsDataURL(file)
   }
 
   const cancelStamp = () => {
@@ -543,17 +568,17 @@ export function EditorPage() {
     setNotice('Grade limpa. Salve para atualizar o historico.')
   }
 
-  const loadStampMask = async (presetId: string, size: number) => {
+  const loadStampMask = async (presetId: string, width: number, height: number) => {
     const preset = SHAPE_PRESETS.find((option) => option.id === presetId)
     if (!preset) return
 
     try {
-      const paintedOffsets = await rasterizeShapeToGrid(preset.src, size, size)
+      const paintedOffsets = await rasterizeShapeToGrid(preset.src, width, height)
       setSelectedStampId(presetId)
-      setStampMask(paintedOffsets.map((index) => ({ row: Math.floor(index / size), column: index % size })))
+      setStampMask(paintedOffsets.map((index) => ({ row: Math.floor(index / width), column: index % width })))
       setStampPosition((current) => {
-        const maxRow = Math.max(0, rows - size)
-        const maxColumn = Math.max(0, columns - size)
+        const maxRow = Math.max(0, rows - height)
+        const maxColumn = Math.max(0, columns - width)
         if (current) return { row: Math.min(current.row, maxRow), column: Math.min(current.column, maxColumn) }
         return { row: Math.floor(maxRow / 2), column: Math.floor(maxColumn / 2) }
       })
@@ -570,21 +595,31 @@ export function EditorPage() {
     }
 
     setStampPosition(null)
-    const preset = await loadStampMask(presetId, stampSize)
+    const preset = await loadStampMask(presetId, stampWidth, stampHeight)
     if (!preset) return
 
-    setNotice(`Carimbo "${preset.label}" selecionado em ${stampSize}x${stampSize}. Use as setas para mover e Enter para aplicar na grade.`)
+    setNotice(`Carimbo "${preset.label}" selecionado em ${stampWidth}x${stampHeight}. Use as setas para mover e Enter para aplicar na grade.`)
     gridFocusRef.current?.focus()
   }
 
-  const handleStampSizeInput = (rawValue: string) => {
-    setStampSizeDraft(rawValue)
+  const handleStampWidthInput = (rawValue: string) => {
+    setStampWidthDraft(rawValue)
     const parsed = Number(rawValue)
     if (rawValue === '' || Number.isNaN(parsed) || parsed < STAMP_SIZE_MIN) return
 
-    const nextSize = Math.min(STAMP_SIZE_MAX, parsed)
-    setStampSize(nextSize)
-    if (selectedStampId) void loadStampMask(selectedStampId, nextSize)
+    const nextWidth = Math.min(STAMP_SIZE_MAX, parsed)
+    setStampWidth(nextWidth)
+    if (selectedStampId) void loadStampMask(selectedStampId, nextWidth, stampHeight)
+  }
+
+  const handleStampHeightInput = (rawValue: string) => {
+    setStampHeightDraft(rawValue)
+    const parsed = Number(rawValue)
+    if (rawValue === '' || Number.isNaN(parsed) || parsed < STAMP_SIZE_MIN) return
+
+    const nextHeight = Math.min(STAMP_SIZE_MAX, parsed)
+    setStampHeight(nextHeight)
+    if (selectedStampId) void loadStampMask(selectedStampId, stampWidth, nextHeight)
   }
 
   const stampCells = useMemo(() => {
@@ -605,8 +640,8 @@ export function EditorPage() {
       setStampPosition((current) => {
         const base = current ?? { row: 0, column: 0 }
         return {
-          row: Math.max(0, Math.min(Math.max(0, rows - stampSize), base.row + deltaRow)),
-          column: Math.max(0, Math.min(Math.max(0, columns - stampSize), base.column + deltaColumn)),
+          row: Math.max(0, Math.min(Math.max(0, rows - stampHeight), base.row + deltaRow)),
+          column: Math.max(0, Math.min(Math.max(0, columns - stampWidth), base.column + deltaColumn)),
         }
       })
       return
@@ -790,7 +825,8 @@ export function EditorPage() {
                 ))}
               </div>
               <div className="editor-toolbar__group-controls editor-toolbar__group-controls--dimensions">
-                <label>Tamanho (celulas) <input type="number" min={STAMP_SIZE_MIN} max={STAMP_SIZE_MAX} value={stampSizeDraft ?? stampSize} onChange={(event) => handleStampSizeInput(event.target.value)} onBlur={() => setStampSizeDraft(null)} /></label>
+                <label>Largura <input type="number" min={STAMP_SIZE_MIN} max={STAMP_SIZE_MAX} value={stampWidthDraft ?? stampWidth} onChange={(event) => handleStampWidthInput(event.target.value)} onBlur={() => setStampWidthDraft(null)} /></label>
+                <label>Altura <input type="number" min={STAMP_SIZE_MIN} max={STAMP_SIZE_MAX} value={stampHeightDraft ?? stampHeight} onChange={(event) => handleStampHeightInput(event.target.value)} onBlur={() => setStampHeightDraft(null)} /></label>
               </div>
               {selectedStampId && <p className="editor-toolbar__hint-small">Setas movem o carimbo. Enter aplica. Esc cancela.</p>}
             </div>
