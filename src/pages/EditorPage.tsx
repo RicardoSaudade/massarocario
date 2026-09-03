@@ -15,7 +15,7 @@ const DEFAULT_STAMP_SIZE = 13
 const STAMP_SIZE_MIN = 3
 const STAMP_SIZE_MAX = 40
 const BLOCK_SIZE = 5
-const MAX_PROFILE_PHOTO_BYTES = 2 * 1024 * 1024
+const PROFILE_PHOTO_SIZE = 256
 const ZOOM_STEP = 0.15
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 3
@@ -33,6 +33,42 @@ function buildChartName(name: string, savedCharts: CrochetChart[]) {
   const trimmedName = name.trim()
   if (trimmedName) return trimmedName
   return `Grafico ${savedCharts.length + 1}`
+}
+
+// Reduz e recorta a foto para caber com folga na cota do localStorage.
+function buildProfilePhotoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = PROFILE_PHOTO_SIZE
+      canvas.height = PROFILE_PHOTO_SIZE
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        reject(new Error('Nao foi possivel processar a imagem.'))
+        return
+      }
+
+      const side = Math.min(image.width, image.height)
+      const sourceX = (image.width - side) / 2
+      const sourceY = (image.height - side) / 2
+      context.drawImage(image, sourceX, sourceY, side, side, 0, 0, PROFILE_PHOTO_SIZE, PROFILE_PHOTO_SIZE)
+
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Nao foi possivel ler a imagem escolhida.'))
+    }
+
+    image.src = objectUrl
+  })
 }
 
 function downloadChartAsPng(name: string, paintedCells: number[], rows: number, columns: number, cellColors: Record<number, string>) {
@@ -531,31 +567,25 @@ export function EditorPage() {
     handleColumnsFieldChange(parsed)
   }
 
-  const handleProfilePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
-      setNotice('A foto precisa ter no maximo 2 MB.')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : null
-      if (!dataUrl) return
-
+    try {
+      const dataUrl = await buildProfilePhotoDataUrl(file)
       setProfilePhotoUrl(dataUrl)
+
       if (user) {
         try {
           window.localStorage.setItem(getProfilePhotoStorageKey(user.email), dataUrl)
+          setNotice('Foto de perfil salva neste navegador.')
         } catch {
           setNotice('A foto foi aplicada, mas nao coube no armazenamento do navegador.')
         }
       }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Nao foi possivel ler a imagem escolhida.')
     }
-    reader.onerror = () => setNotice('Nao foi possivel ler a imagem escolhida.')
-    reader.readAsDataURL(file)
   }
 
   const cancelStamp = () => {
@@ -761,7 +791,7 @@ export function EditorPage() {
               ) : (
                 <span className="editor-sidebar__profile editor-sidebar__profile--placeholder" aria-hidden="true">+</span>
               )}
-              <input type="file" accept="image/*" className="sr-only" onChange={handleProfilePhotoChange} />
+              <input type="file" accept="image/*" className="sr-only" onChange={(event) => void handleProfilePhotoChange(event)} />
             </label>
           )}
           <div>
