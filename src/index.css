@@ -173,3 +173,32 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 
 @media (max-width: 980px) { .editor-page { grid-template-columns: 1fr; }.editor-sidebar { border-right: 0; border-bottom: 1px solid #d9d0bd; }.editor-history { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
 @media (max-width: 840px) { .site-header__inner, .site-footer__inner { width: min(100% - 2rem, 1120px); min-height: 4.7rem; }.menu-button { display: block; }.primary-nav { position: absolute; top: 100%; left: 0; right: 0; display: none; padding: 1rem; background: #fcf8ee; border-bottom: 1px solid #d9d0bd; }.primary-nav--open { display: grid; gap: .2rem; }.primary-nav a, .header-logout { padding: .8rem; }.primary-nav__account { width: fit-content; margin-top: .3rem; }.hero { grid-template-columns: 1fr; min-height: auto; }.hero__content { padding: 4rem 1.25rem; }.hero__cabinet { min-height: 360px; }.hero__threads span { display: none; }.manifesto { grid-template-columns: 1fr; gap: 1.5rem; padding: 4rem 1.25rem; }.manifesto .button { grid-column: auto; }.about { width: min(100% - 2.5rem, 1050px); }.about__story { grid-template-columns: 1fr; }.about__yarn { height: 250px; }.editor-toolbar__row { align-items: stretch; }.editor-toolbar__group--grow { min-width: 0; }.editor-toolbar__group--actions { margin-left: 0; width: 100%; }.editor-toolbar__group--actions .button { flex: 1 1 140px; }.editor-toolbar__group-controls { width: 100%; }.editor-toolbar__group-controls .tool-button { flex: 1 1 130px; }.editor-toolbar__group-controls--dimensions input { width: 100%; }.diary { width: min(100% - 2rem, 1040px); }.diary-post { grid-template-columns: 1fr; }.diary-post__image { height: clamp(230px, 65vw, 420px); min-height: 0; }.site-footer__inner { grid-template-columns: 1fr; padding: 1.5rem 0; }.site-footer small { grid-column: auto; grid-row: auto; } }
+
+/* Celular: compacta o editor, que foi desenhado para desktop. */
+@media (max-width: 680px) {
+  .editor-sidebar { padding: 1rem; gap: .85rem; }
+  .editor-sidebar__header { gap: .7rem; }
+  .editor-sidebar__header h1 { font-size: 1.7rem; }
+  .editor-sidebar__profile { width: 52px; border-width: 3px; }
+  .editor-sidebar__copy { font-size: .7rem; line-height: 1.55; }
+  .editor-sidebar__collapsible-toggle { min-height: 2.2rem; height: 2.2rem; font-size: .68rem; }
+  .editor-sidebar__tools { gap: .85rem; }
+  .editor-sidebar__tools .editor-toolbar__group-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+  .editor-sidebar__tools .tool-button { width: 100%; min-height: 2.4rem; padding: .45rem .55rem; font-size: .64rem; text-align: center; }
+  .editor-toolbar { padding: .8rem; gap: .8rem; }
+  .editor-toolbar__group-label { font-size: .62rem; }
+  .editor-toolbar__name, .editor-toolbar__technique { min-height: 2.6rem; padding: .55rem .7rem; font-size: .82rem; }
+  .editor-toolbar__technique { min-width: 0; width: 100%; }
+  .editor-toolbar__group-controls--dimensions input { min-height: 2.4rem; }
+  .editor-history { max-height: 45vh; }
+  .stamp-picker { gap: .35rem; }
+  .stamp-button { width: 2.4rem; height: 2.4rem; }
+  .editor-workspace { gap: .85rem; padding: 1rem; }
+  .editor-summary p { padding: .4rem .6rem; font-size: .66rem; }
+  .chart-grid-shell { padding: .4rem; }
+  /* Sem sticky no celular: a coluna de numeros ficava presa por cima do desenho. */
+  .chart-grid__axis--row, .chart-grid__corner { position: static; }
+  .written-instructions { padding: .8rem; max-height: 20rem; }
+  .written-instructions__body { font-size: .7rem; }
+  .editor-workspace__hint { font-size: .7rem; }
+}
