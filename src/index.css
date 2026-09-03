@@ -66,7 +66,7 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 .route-state { width: min(520px, calc(100% - 2rem)); margin: 6rem auto; padding: 1rem 1.2rem; background: #fffdf7; border: 1px solid #d9d0bd; box-shadow: 6px 6px 0 #f3d862; font-size: .82rem; }
 .not-found { width: min(700px, calc(100% - 2.5rem)); min-height: 60vh; display: grid; align-content: center; justify-items: start; gap: 1.3rem; margin: auto; }.not-found h1 { font-size: clamp(3rem, 7vw, 6rem); }.not-found p:not(.eyebrow) { margin: 0; }
 .editor-page { display: grid; grid-template-columns: minmax(280px, 330px) minmax(0, 1fr); min-height: calc(100vh - 5.5rem); background: linear-gradient(180deg, #fcf8ee 0%, #f7efdf 100%); }
-.editor-sidebar { display: grid; grid-template-rows: auto auto auto auto auto; gap: 1.25rem; padding: clamp(1.25rem, 3vw, 2rem); border-right: 1px solid #d9d0bd; background: #fffdf7; overflow-y: auto; }
+.editor-sidebar { display: grid; grid-auto-rows: min-content; align-content: start; gap: 1.25rem; padding: clamp(1.25rem, 3vw, 2rem); border-right: 1px solid #d9d0bd; background: #fffdf7; overflow-y: auto; }
 .editor-sidebar__header { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: center; }
 .editor-sidebar__profile-upload { position: relative; display: inline-block; cursor: pointer; }
 .editor-sidebar__profile { display: block; width: 72px; aspect-ratio: 1; object-fit: cover; border-radius: 50%; border: 4px solid #f3d862; }
@@ -76,7 +76,7 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 .editor-sidebar__copy { margin: 0; font-size: .78rem; line-height: 1.7; }
 .editor-sidebar__action { width: 100%; }
 .editor-sidebar__collapsible { display: grid; gap: .6rem; }
-.editor-sidebar__collapsible-toggle { width: 100%; min-height: 2.6rem; padding: .5rem .8rem; border: 1px solid #d9d0bd; background: #fcf8ee; color: #243d3a; font-size: .74rem; font-weight: 500; text-align: left; letter-spacing: .04em; text-transform: uppercase; }
+.editor-sidebar__collapsible-toggle { width: 100%; min-height: 2.4rem; height: 2.4rem; padding: 0 .8rem; border: 1px solid #d9d0bd; background: #fcf8ee; color: #243d3a; font-size: .74rem; font-weight: 500; text-align: left; letter-spacing: .04em; text-transform: uppercase; }
 .editor-sidebar__collapsible-toggle:hover { border-color: #243d3a; }
 .editor-sidebar__tools { display: grid; gap: 1.1rem; padding-top: .4rem; border-top: 1px solid #efe7d8; }
 .editor-sidebar__tools .editor-toolbar__group-controls { flex-direction: column; align-items: stretch; }
@@ -86,9 +86,9 @@ h1, h2 { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; line-heigh
 .stamp-button { display: grid; place-items: center; width: 3rem; height: 3rem; padding: .3rem; border: 1px solid #d9d0bd; background: #fffdf7; }
 .stamp-button:hover { border-color: #243d3a; }
 .stamp-button--active { border-color: #243d3a; background: #f3d862; }
-.editor-history { display: grid; gap: .9rem; align-content: start; max-height: min(38vh, 320px); overflow-y: auto; padding-right: .2rem; }
+.editor-history { display: grid; gap: .7rem; align-content: start; max-height: min(30vh, 260px); overflow-y: auto; padding-right: .2rem; }
 .editor-history__empty { margin: 0; padding: 1rem; border: 1px dashed #c8bea8; background: #faf4e7; font-size: .76rem; line-height: 1.65; }
-.history-card { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: .9rem; align-items: center; width: 100%; padding: .85rem; border: 1px solid #d9d0bd; background: #fcf8ee; color: #243d3a; text-align: left; }
+.history-card { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: .7rem; align-items: center; width: 100%; padding: .6rem; border: 1px solid #d9d0bd; background: #fcf8ee; color: #243d3a; text-align: left; }
 .history-card:hover, .history-card--active { border-color: #243d3a; box-shadow: 5px 5px 0 #f3d862; }
 .history-card__preview { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; aspect-ratio: 1; padding: .35rem; background: #dfd6c4; }
 .history-card__pixel { background: #fff; }
