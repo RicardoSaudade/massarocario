@@ -14,6 +14,7 @@ type GridPosition = { row: number; column: number }
 const DEFAULT_STAMP_SIZE = 13
 const STAMP_SIZE_MIN = 3
 const STAMP_SIZE_MAX = 40
+const BLOCK_SIZE = 5
 const ZOOM_STEP = 0.15
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 3
@@ -877,6 +878,8 @@ export function EditorPage() {
                         'chart-grid__cell',
                         isTunisian && stitchSymbol ? `chart-grid__cell--tunisian chart-grid__cell--tunisian-${stitchSymbol}` : '',
                         !isTunisian && painted ? 'chart-grid__cell--painted' : '',
+                        column % BLOCK_SIZE === 0 && column > 0 ? 'chart-grid__cell--block-left' : '',
+                        row % BLOCK_SIZE === 0 && row > 0 ? 'chart-grid__cell--block-top' : '',
                         isCursorCell ? 'chart-grid__cell--cursor' : '',
                         isStampPreviewCell ? 'chart-grid__cell--stamp-preview' : '',
                       ].filter(Boolean).join(' ')
